@@ -93,3 +93,82 @@ find_policy_errors <- function(df, data_year = 2026) {
   
   errors
 }
+############################
+# Part B – Policy maintenance
+############################
+
+add_policyholder <- function(df, policy_no, fname, lname, inception_year,
+                             age, premium, sum_assured, term,
+                             gender, smoker_status) {
+  
+  if (age < 65 | age > 75) stop("Invalid age")
+  if (age + term >= 90) stop("Term exceeds age 90")
+  if (!gender %in% c("Male", "Female")) stop("Invalid gender")
+  if (!smoker_status %in% c("Non-smoker", "Smoker", "Ex-smoker"))
+    stop("Invalid smoker status")
+  
+  new_row <- data.frame(
+    PolicyNumber = policy_no,
+    FirstName = fname,
+    LastName = lname,
+    InceptionYear = inception_year,
+    Age = age,
+    Premium = premium,
+    SumAssured = sum_assured,
+    Term = term,
+    Gender = gender,
+    SmokerStatus = smoker_status,
+    Exit = NA,
+    ExitYear = NA,
+    stringsAsFactors = FALSE
+  )
+  
+  rbind(df, new_row)
+}
+
+record_deaths <- function(df, policies, year) {
+  for (p in policies) {
+    i <- which(df$PolicyNumber == p)
+    if (length(i) == 0) stop("Policy not found")
+    if (!is.na(df$Exit[i])) stop("Policy not active")
+    
+    df$Exit[i] <- "Death"
+    df$ExitYear[i] <- year
+  }
+  df
+}
+
+record_withdrawals <- function(df, policies, year) {
+  for (p in policies) {
+    i <- which(df$PolicyNumber == p)
+    if (length(i) == 0) stop("Policy not found")
+    if (!is.na(df$Exit[i])) stop("Policy not active")
+    
+    df$Exit[i] <- "Withdraw"
+    df$ExitYear[i] <- year
+  }
+  df
+}
+
+end_expired_policies <- function(df, year) {
+  for (i in seq_len(nrow(df))) {
+    if (is.na(df$Exit[i])) {
+      if (year == df$InceptionYear[i] + df$Term[i] - 1) {
+        df$Exit[i] <- "End"
+        df$ExitYear[i] <- year
+      }
+    }
+  }
+  df
+}
+
+premium_income <- function(ph, year) {
+  
+  in_force <- ph[
+    year >= ph$InceptionYear &
+      year < ph$InceptionYear + ph$Term &
+      (is.na(ph$ExitYear) | year < ph$ExitYear),
+  ]
+  
+  sum(in_force$Premium)
+}
