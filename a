@@ -172,3 +172,94 @@ premium_income <- function(ph, year) {
   
   sum(in_force$Premium)
 }
+############################
+# Part C – Summaries
+############################
+
+premium_summary <- function(df, year) {
+  a <- df[is_active(df, year), ]
+  
+  list(
+    All = sum(a$Premium),
+    ByGender = tapply(a$Premium, a$Gender, sum),
+    BySmoker = tapply(a$Premium, a$SmokerStatus, sum),
+    ByGenderSmoker = tapply(a$Premium,
+                            list(a$Gender, a$SmokerStatus), sum)
+  )
+}
+
+death_benefit_summary <- function(df, year) {
+  d <- df[df$Exit == "Death" & df$ExitYear == year, ]
+  
+  list(
+    All = sum(d$SumAssured),
+    ByGender = tapply(d$SumAssured, d$Gender, sum),
+    BySmoker = tapply(d$SumAssured, d$SmokerStatus, sum),
+    ByGenderSmoker = tapply(d$SumAssured,
+                            list(d$Gender, d$SmokerStatus), sum)
+  )
+}
+
+policy_cashflows <- function(df, policy_no, year, interest) {
+  r <- df[df$PolicyNumber == policy_no, ]
+  if (nrow(r) == 0) stop("Policy not found")
+  
+  expiry_year <- r$InceptionYear + r$Term - 1
+  
+  last_year <- min(year,
+                   ifelse(is.na(r$ExitYear), Inf, r$ExitYear),
+                   expiry_year)
+  
+  years <- r$InceptionYear:last_year
+  pv_prem <- sum(r$Premium * (1 + interest)^(year - years))
+  
+  pv_ben <- 0
+  if (r$Exit == "Death" & r$ExitYear <= year) {
+    pv_ben <- r$SumAssured * (1 + interest)^(year - r$ExitYear + 0.5)
+  }
+  
+  list(
+    NominalPremium = length(years) * r$Premium,
+    NominalBenefit = ifelse(r$Exit == "Death" & r$ExitYear <= year,
+                            r$SumAssured, 0),
+    PVPremium = pv_prem,
+    PVBenefit = pv_ben
+  )
+}
+
+############################
+# Part D – Simulation
+############################
+
+simulate_deaths <- function(df, mort, smoker, year) {
+  active <- df[is_active(df, year), ]
+  
+  deaths <- data.frame(PolicyNumber = character(),
+                       Benefit = numeric(),
+                       stringsAsFactors = FALSE)
+  
+  for (i in seq_len(nrow(active))) {
+    age <- active$Age[i] + (year - active$InceptionYear[i])
+    g <- active$Gender[i]
+    s <- active$SmokerStatus[i]
+    
+    base_qx <- mort[mort$Age == age, ][[g]]
+    if (length(base_qx) == 0) next
+    
+    adj <- smoker[smoker$Gender == g,
+                  ifelse(s == "Non-smoker", "Non.smoker",
+                         ifelse(s == "Smoker", "Smoker", "Ex.smoker"))]
+    
+    qx <- base_qx * adj
+    
+    if (runif(1) < qx) {
+      deaths <- rbind(deaths,
+                      data.frame(
+                        PolicyNumber = active$PolicyNumber[i],
+                        Benefit = active$SumAssured[i]
+                      ))
+    }
+  }
+  
+  deaths
+}
