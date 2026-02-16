@@ -1,13 +1,20 @@
+# Group 12 Coursework
+# This file contains all functions for Parts A–D of the coursework
+# Data should be read in by the user using read.csv()
+##########################################################
+# ACTUARIAL COURSEWORK – PARTS A, B, C, D
+##########################################################
+
 ############################
 # Data loading & setup
 ############################
-
+# read in all CSV files and standardise column names for consistency  
 load_data <- function() {
   raw <- read.csv("pholdersraw.csv", stringsAsFactors = FALSE)
   ph  <- read.csv("pholders.csv", stringsAsFactors = FALSE)
   mort <- read.csv("mortrates.csv", stringsAsFactors = FALSE)
   smoker <- read.csv("srates.csv", stringsAsFactors = FALSE)
-  
+# standardise column names for raw and cleaned data, ensure both datasets use identical column naming  
   names(raw) <- names(ph) <- c(
     "PolicyNumber",
     "FirstName",
@@ -23,76 +30,88 @@ load_data <- function() {
     "ExitYear"
   )
   
-  names(mort) <- c("Age", "Male", "Female")
-  names(smoker) <- c("Gender", "Non.smoker", "Smoker", "Ex.smoker")
+  names(mort) <- c("Age", "Male", "Female") # standardise mortality table column names
+  names(smoker) <- c("Gender", "Non.smoker", "Smoker", "Ex.smoker") # standardise smoker rate table column names
   
-  list(raw = raw, ph = ph, mort = mort, smoker = smoker)
+  list(raw = raw, ph = ph, mort = mort, smoker = smoker) # return all datasets as a named list
 }
 
 ############################
 # Utility helpers
 ############################
-
+# determine whether a policy is active in a give year
 is_active <- function(df, year) {
   is.na(df$Exit) | df$ExitYear > year
 }
-
+# calculate attained age of a policyholder in a given year
 policy_age <- function(df, year) {
   df$Age + (year - df$InceptionYear)
 }
+
+# data <- load_data()
+# raw <- data$raw
+# ph <- data$ph
+# mort <- data$mort
+# smoker <- data$smoker
 
 ############################
 # Part A – Detecting errors
 ############################
 
+# identify data validation errors in the policyholder dataset
+# returns a dataframe including policynumber and error description 
 find_policy_errors <- function(df, data_year = 2026) {
   errors <- data.frame(PolicyNumber = character(),
                        Error = character(),
                        stringsAsFactors = FALSE)
-  
+
+  # helper function to add errrors to error log  
   add_error <- function(p, msg) {
     errors <<- rbind(errors,
                      data.frame(PolicyNumber = p, Error = msg))
   }
-  
+
+  # define valid categorical values  
   valid_gender <- c("Male", "Female")
   valid_smoker <- c("Non-smoker", "Smoker", "Ex-smoker")
-  
+
+  # loop through each policy record  
   for (i in seq_len(nrow(df))) {
-    r <- df[i, ]
+    r <- df[i, ] # extract single record
     
-    if (r$Age < 65 || r$Age > 75)
+    if (r$Age < 65 || r$Age > 75) # inception age between 65 and 75
       add_error(r$PolicyNumber, "Invalid age at inception")
     
-    if (r$InceptionYear > data_year)
+    if (r$InceptionYear > data_year) # inception year cannot be after data year
       add_error(r$PolicyNumber, "Inception year after data year")
     
-    if (r$Age + r$Term >= 90)
+    if (r$Age + r$Term >= 90) # policy cannot run beyond age 90
       add_error(r$PolicyNumber, "Policy exceeds age 90")
     
-    if (!r$Gender %in% valid_gender)
+    if (!r$Gender %in% valid_gender) # check if gender is valid
       add_error(r$PolicyNumber, "Invalid gender")
     
-    if (!r$SmokerStatus %in% valid_smoker)
+    if (!r$SmokerStatus %in% valid_smoker) # check if smoker status is valid
       add_error(r$PolicyNumber, "Invalid smoker status")
     
     if (!is.na(r$ExitYear)) {
-      if (r$ExitYear < r$InceptionYear)
+      if (r$ExitYear < r$InceptionYear) # exit year cannot be before policy started
         add_error(r$PolicyNumber, "Exit before inception")
       
-      if (r$ExitYear == data_year && r$Exit != "Withdraw")
+      if (r$ExitYear == data_year && r$Exit != "Withdraw") # if exit happens in data year, must be withdrawal
         add_error(r$PolicyNumber, "Exit recorded in data year")
       
       if (r$Exit == "End") {
-        expected <- r$InceptionYear + r$Term - 1
+        expected <- r$InceptionYear + r$Term - 1 # formula for expected end year
         if (r$ExitYear != expected)
-          add_error(r$PolicyNumber, "Policy ended before full term")
+          add_error(r$PolicyNumber, "Policy ended before full term") # if actual exit year is different, ended early
       }
     }
   }
   
-  errors
+  errors # return all detected errors
 }
+
 ############################
 # Part B – Policy maintenance
 ############################
@@ -100,13 +119,15 @@ find_policy_errors <- function(df, data_year = 2026) {
 add_policyholder <- function(df, policy_no, fname, lname, inception_year,
                              age, premium, sum_assured, term,
                              gender, smoker_status) {
-  
+
+  # validation checks (same as above)  
   if (age < 65 | age > 75) stop("Invalid age")
   if (age + term >= 90) stop("Term exceeds age 90")
   if (!gender %in% c("Male", "Female")) stop("Invalid gender")
   if (!smoker_status %in% c("Non-smoker", "Smoker", "Ex-smoker"))
     stop("Invalid smoker status")
-  
+
+  # new policy record  
   new_row <- data.frame(
     PolicyNumber = policy_no,
     FirstName = fname,
@@ -122,22 +143,24 @@ add_policyholder <- function(df, policy_no, fname, lname, inception_year,
     ExitYear = NA,
     stringsAsFactors = FALSE
   )
-  
+  # add new row to existing dataframe
   rbind(df, new_row)
 }
 
+# mark selected policies as deaths
 record_deaths <- function(df, policies, year) {
   for (p in policies) {
-    i <- which(df$PolicyNumber == p)
-    if (length(i) == 0) stop("Policy not found")
-    if (!is.na(df$Exit[i])) stop("Policy not active")
+    i <- which(df$PolicyNumber == p) # find row number of policy provided
+    if (length(i) == 0) stop("Policy not found") # if policy number not found, stop with error
+    if (!is.na(df$Exit[i])) stop("Policy not active") # if policy already has exit recorded, not active
     
-    df$Exit[i] <- "Death"
+    df$Exit[i] <- "Death" # record death and exit year
     df$ExitYear[i] <- year
   }
-  df
+  df # return updated dataframe
 }
 
+# mark selected policies as withdrawn
 record_withdrawals <- function(df, policies, year) {
   for (p in policies) {
     i <- which(df$PolicyNumber == p)
@@ -150,6 +173,7 @@ record_withdrawals <- function(df, policies, year) {
   df
 }
 
+# automatically end policies that reach the end of their full term
 end_expired_policies <- function(df, year) {
   for (i in seq_len(nrow(df))) {
     if (is.na(df$Exit[i])) {
@@ -162,22 +186,26 @@ end_expired_policies <- function(df, year) {
   df
 }
 
+# calculate total premium income in a year
 premium_income <- function(ph, year) {
   
+  # conditions: year is after or equal to inception, year is before policy term ends, policy has not exited before that year
   in_force <- ph[
     year >= ph$InceptionYear &
       year < ph$InceptionYear + ph$Term &
       (is.na(ph$ExitYear) | year < ph$ExitYear),
   ]
   
-  sum(in_force$Premium)
+  sum(in_force$Premium) # return total premiums from active policies
 }
+
 ############################
 # Part C – Summaries
 ############################
 
+# produce premium totals for a given year
 premium_summary <- function(df, year) {
-  a <- df[is_active(df, year), ]
+  a <- df[is_active(df, year), ] # only active policies
   
   list(
     All = sum(a$Premium),
@@ -188,8 +216,9 @@ premium_summary <- function(df, year) {
   )
 }
 
+# summarise death benefits paid in a year
 death_benefit_summary <- function(df, year) {
-  d <- df[df$Exit == "Death" & df$ExitYear == year, ]
+  d <- df[df$Exit == "Death" & df$ExitYear == year, ] # policies selected: exited due to death, exityear= given year
   
   list(
     All = sum(d$SumAssured),
@@ -200,30 +229,31 @@ death_benefit_summary <- function(df, year) {
   )
 }
 
+# calculate premiums and benefits for a single policy up to a given year
 policy_cashflows <- function(df, policy_no, year, interest) {
-  r <- df[df$PolicyNumber == policy_no, ]
-  if (nrow(r) == 0) stop("Policy not found")
+  r <- df[df$PolicyNumber == policy_no, ] # find selected policy
+  if (nrow(r) == 0) stop("Policy not found") # if not found, stop
   
-  expiry_year <- r$InceptionYear + r$Term - 1
+  expiry_year <- r$InceptionYear + r$Term - 1 # calculate year policy meant to expire
   
   last_year <- min(year,
                    ifelse(is.na(r$ExitYear), Inf, r$ExitYear),
                    expiry_year)
   
-  years <- r$InceptionYear:last_year
-  pv_prem <- sum(r$Premium * (1 + interest)^(year - years))
+  years <- r$InceptionYear:last_year # create a sequence of years from inception to last
+  pv_prem <- sum(r$Premium * (1 + interest)^(year - years)) # each premium is accumulated to the chosen year
   
-  pv_ben <- 0
+  pv_ben <- 0 # start with no benefit
   if (r$Exit == "Death" & r$ExitYear <= year) {
     pv_ben <- r$SumAssured * (1 + interest)^(year - r$ExitYear + 0.5)
-  }
+  } # if death occurred on or before chosen year, calculate PV of death benefit
   
   list(
-    NominalPremium = length(years) * r$Premium,
+    NominalPremium = length(years) * r$Premium, # total premiums paid without interest
     NominalBenefit = ifelse(r$Exit == "Death" & r$ExitYear <= year,
-                            r$SumAssured, 0),
-    PVPremium = pv_prem,
-    PVBenefit = pv_ben
+                            r$SumAssured, 0), # death benefit paid, no interest
+    PVPremium = pv_prem, # PV of premiums accumulated to chosen year
+    PVBenefit = pv_ben # PV of benefit accumulated to chosen year
   )
 }
 
@@ -231,27 +261,29 @@ policy_cashflows <- function(df, policy_no, year, interest) {
 # Part D – Simulation
 ############################
 
+# simulate which active policies die in a given year using mortality rates
 simulate_deaths <- function(df, mort, smoker, year) {
-  active <- df[is_active(df, year), ]
+  active <- df[is_active(df, year), ] # keep only policies active in that year
   
-  deaths <- data.frame(PolicyNumber = character(),
+  deaths <- data.frame(PolicyNumber = character(), # create empty dataframe to store sim deaths
                        Benefit = numeric(),
                        stringsAsFactors = FALSE)
   
   for (i in seq_len(nrow(active))) {
-    age <- active$Age[i] + (year - active$InceptionYear[i])
-    g <- active$Gender[i]
-    s <- active$SmokerStatus[i]
+    age <- active$Age[i] + (year - active$InceptionYear[i]) # calculate current age
+    g <- active$Gender[i] # gender
+    s <- active$SmokerStatus[i] # smoker status
     
-    base_qx <- mort[mort$Age == age, ][[g]]
-    if (length(base_qx) == 0) next
+    base_qx <- mort[mort$Age == age, ][[g]] # look up mortality rate by age and gender
+    if (length(base_qx) == 0) next # if no rate found, skip
     
     adj <- smoker[smoker$Gender == g,
                   ifelse(s == "Non-smoker", "Non.smoker",
-                         ifelse(s == "Smoker", "Smoker", "Ex.smoker"))]
+                         ifelse(s == "Smoker", "Smoker", "Ex.smoker"))] # get smoker loading based on gender and status
     
-    qx <- base_qx * adj
+    qx <- base_qx * adj # final mortality probability
     
+    # generate random number 0-1, if less than qx, death occurs
     if (runif(1) < qx) {
       deaths <- rbind(deaths,
                       data.frame(
@@ -261,5 +293,5 @@ simulate_deaths <- function(df, mort, smoker, year) {
     }
   }
   
-  deaths
+  deaths # ret all sim deaths
 }
